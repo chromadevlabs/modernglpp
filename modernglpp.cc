@@ -16,13 +16,13 @@
 static mgl::AllocatorFuncs* allocator = nullptr;
 
 template <typename T, typename... Args>
-static auto instantiate(Args&&... args) -> T* {
+static auto newObject(Args&&... args) -> T* {
     auto* ptr = allocator->allocate(allocator->user, sizeof (T));
     return new (ptr) T{args...};
 }
 
 template <typename T>
-static auto free(T* ptr) -> void {
+static auto deleteObject(T* ptr) -> void {
     if (ptr) {
         ptr->~T();
         allocator->free(allocator->user, ptr);
@@ -41,7 +41,7 @@ static auto glGetErrorString() -> const char* {
 }
 
 namespace mgl {
-    static constexpr GLenum enum_cast(DataType type) {
+    static constexpr auto enum_cast(DataType type) -> GLenum {
         switch (type) {
             case DataType::Float: return GL_FLOAT;
             case DataType::Byte:  return GL_UNSIGNED_BYTE;
@@ -50,7 +50,7 @@ namespace mgl {
         return GL_INVALID_ENUM;
     }
 
-    static constexpr GLenum enum_cast(BufferType type) {
+    static constexpr auto enum_cast(BufferType type) -> GLenum {
         switch (type) {
             case BufferType::Array:   return GL_ARRAY_BUFFER;
             case BufferType::Element: return GL_ELEMENT_ARRAY_BUFFER;
@@ -61,7 +61,7 @@ namespace mgl {
         return GL_INVALID_ENUM;
     }
 
-    static constexpr GLenum enum_cast(DrawMode type) {
+    static constexpr auto enum_cast(DrawMode type) -> GLenum {
         switch (type) {
             case DrawMode::Triangles: return GL_TRIANGLES;
             case DrawMode::Lines:     return GL_LINES;
@@ -71,8 +71,15 @@ namespace mgl {
         return GL_INVALID_ENUM;
     }
 
-    static constexpr GLenum enum_cast(TextureFormat format) {
+    static constexpr auto enum_cast(TextureFormat format) -> GLenum {
         switch (format) {
+            case TextureFormat::RED:     return GL_RED;
+            case TextureFormat::RG:      return GL_RG;
+            case TextureFormat::RGB:     return GL_RGB;
+            case TextureFormat::RGBA:    return GL_RGBA;
+            case TextureFormat::BGR:     return GL_BGR;
+            case TextureFormat::BGRA:    return GL_BGRA;
+
             case TextureFormat::R8u:     return GL_R8;
             case TextureFormat::RG8u:    return GL_RG8;
             case TextureFormat::RGB8u:   return GL_RGB8;
@@ -84,6 +91,45 @@ namespace mgl {
         }
 
         return GL_INVALID_ENUM;
+    }
+
+    static constexpr auto enum_cast(TextureFilterMode mode) -> GLenum {
+        switch (mode) {
+        case TextureFilterMode::Linear:  return GL_LINEAR;
+        case TextureFilterMode::Nearest: return GL_NEAREST;
+        }
+
+        return GL_INVALID_ENUM;
+    }
+
+    static constexpr auto enum_cast(TextureWrapMode mode) -> GLenum {
+        switch (mode) {
+        case TextureWrapMode::ClampToEdge:        return GL_CLAMP_TO_EDGE;
+        case TextureWrapMode::ClampToBorder:      return GL_CLAMP_TO_BORDER;
+        case TextureWrapMode::MirroredRepeat:     return GL_MIRRORED_REPEAT;
+        case TextureWrapMode::Repeat:             return GL_REPEAT;
+        case TextureWrapMode::MirrorClampToEdge:  return GL_MIRROR_CLAMP_TO_EDGE;
+        }
+
+        return GL_INVALID_ENUM;
+    }
+
+    static constexpr auto sizedToBase(TextureFormat format) -> TextureFormat {
+        switch (format) {
+            case TextureFormat::R8u:
+            case TextureFormat::R32f:    return TextureFormat::RED;
+
+            case TextureFormat::RG8u:
+            case TextureFormat::RG32f:   return TextureFormat::RG;
+            
+            case TextureFormat::RGB8u:   
+            case TextureFormat::RGB32f:  return TextureFormat::RGB;
+            
+            case TextureFormat::RGBA8u:
+            case TextureFormat::RGBA32f: return TextureFormat::RGBA;
+        }
+
+        return format;
     }
 
     auto set_uniform_f1(Program&, int index, View<const float> data) -> void {
@@ -152,6 +198,11 @@ namespace mgl {
     }
 
     template <>
+    auto set_uniform<Sampler> (Program& p, int index, const Sampler& value) -> void {
+        set_uniform_i1(p, index, View<const int>{ &value.index, (size_t) 1 });
+    }
+
+    template <>
     auto Uniform<float>(Program& p, int index, const float& value) -> void {
         set_uniform_f1(p, index, View<const float>{ &value, (size_t) 1 });
     }
@@ -162,8 +213,8 @@ namespace mgl {
     }
 
     template <>
-    auto set_uniform<Sampler> (Program& p, int index, const Sampler& value) -> void {
-        set_uniform_i1(p, index, View<const int>{ &value.index, (size_t) 1 });
+    auto Uniform<Sampler>(Program& p, int index, const Sampler& value) -> void {
+        set_uniform (p, index, value);
     }
 
     #define ATTRIBUTE_IMPL_I(Type, Enum) template <>                                  \
@@ -210,13 +261,16 @@ namespace mgl {
                 clearDepth  ? GL_DEPTH_BUFFER_BIT : 0);
     }
 
+    Sampler::Sampler(int slotIndex) : index(slotIndex) {
+    }
+
     auto Sampler::setTexture(const Texture* texture) -> void {
         this->texture = texture;
     }
 
-    auto Sampler::activate() -> void {
+    auto Sampler::bind() -> void {
         glActiveTexture(GL_TEXTURE0 + index);
-        glBindTexture(GL_TEXTURE_2D, texture->handle);
+        glBindTexture(GL_TEXTURE_2D, texture ? texture->handle : 0);
         MGL_OPENGL_CHECK();
     }
 
@@ -286,7 +340,7 @@ namespace mgl {
 
         MGL_OPENGL_CHECK();
 
-        return instantiate<Program>(p);
+        return newObject<Program>(p);
     }
 
     Program::~Program() {
@@ -305,7 +359,7 @@ namespace mgl {
         glBufferData(enum_cast(type), size, data, dynamic ? GL_DYNAMIC_DRAW : GL_STATIC_DRAW);
         MGL_OPENGL_CHECK();
 
-        return instantiate<Buffer>(handle, size, type);
+        return newObject<Buffer>(handle, size, type);
     }
 
     Buffer::~Buffer() {
@@ -333,7 +387,7 @@ namespace mgl {
         callback(handle, buffers);
         MGL_OPENGL_CHECK();
 
-        auto* vao = instantiate<VertexArray>(
+        auto* vao = newObject<VertexArray>(
             handle, 
             (Buffer**) allocator->allocate(allocator->user, buffers.size() * sizeof (Buffer*)),
             buffers.size()
@@ -384,18 +438,40 @@ namespace mgl {
         MGL_OPENGL_CHECK();
     }
 
-    auto Texture::make(int w, int h, DataType sourceDataType, TextureFormat format, const void* data) -> Texture* {
+    auto Texture::setOptions(TextureOptions options) -> void {
+        glBindTexture(GL_TEXTURE_2D, handle);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, enum_cast(options.filter.min));
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, enum_cast(options.filter.mag));
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, enum_cast(options.wrap.s));
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, enum_cast(options.wrap.t));
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_R, enum_cast(options.wrap.r));
+
+        MGL_OPENGL_CHECK();
+    }
+
+    auto Texture::make(int w, int h, TextureFormat deviceFormat, const TextureSourceData* desc) -> Texture* {
         handle_t handle;
 
         glGenTextures(1, &handle);
         glBindTexture(GL_TEXTURE_2D, handle);
-        glTexImage2D(GL_TEXTURE_2D, 0,
-                     enum_cast(format), w, h, 0,
-                     enum_cast(format),
-                     enum_cast(sourceDataType), data);
-        MGL_OPENGL_CHECK();
 
-        return instantiate<Texture>(handle, format);
+        if (desc) {
+            glTexImage2D(GL_TEXTURE_2D, 0,
+                         enum_cast(deviceFormat), w, h, 0,
+                         enum_cast(sizedToBase(desc->format)), 
+                         enum_cast(desc->type), desc->data);
+        }
+        else {
+            glTexImage2D(GL_TEXTURE_2D, 0,
+                         enum_cast(deviceFormat), w, h, 0,
+                         enum_cast(sizedToBase(deviceFormat)), 
+                         GL_UNSIGNED_BYTE, nullptr);
+        }
+
+        MGL_OPENGL_CHECK();
+        return newObject<Texture>(handle, deviceFormat);
     }
 
     Texture::~Texture() {

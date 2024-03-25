@@ -77,9 +77,25 @@ namespace mgl {
     };
 
     enum class TextureFormat {
+        RED,  RG,    RGB,    RGBA,
+        BGR,  BGRA,
+
         R8u,  RG8u,  RGB8u,  RGBA8u,
         R32f, RG32f, RGB32f, RGBA32f
     };
+
+    enum class TextureFilterMode {
+        Nearest, Linear
+    };
+
+    enum class TextureWrapMode {
+        ClampToEdge,
+        ClampToBorder,
+        MirroredRepeat,
+        Repeat,
+        MirrorClampToEdge
+    };
+
 
     template <typename T>
     auto Attribute(int index, int size, size_t stride, size_t offset) -> void;
@@ -126,7 +142,7 @@ namespace mgl {
         Sampler(int slotIndex);
 
         auto setTexture(const Texture*) -> void;
-        auto activate()               -> void;
+        auto bind()               -> void;
 
         int            index;
         const Texture* texture;
@@ -144,6 +160,25 @@ namespace mgl {
         int      index;
     };
 
+    struct TextureSourceData {
+        TextureFormat format;
+        DataType type;
+        const void* data;
+    };
+
+    struct TextureOptions {
+        struct {
+            TextureFilterMode min;
+            TextureFilterMode mag;
+        } filter;
+
+        struct {
+            TextureWrapMode s;
+            TextureWrapMode t;
+            TextureWrapMode r;
+        } wrap;
+    };
+
     struct Texture final {
         MGL_NO_COPY(Texture);
         MGL_NO_MOVE(Texture);
@@ -151,8 +186,9 @@ namespace mgl {
         ~Texture();
 
         auto write(int x, int y, int w, int h, DataType sourceDataType, void const* data) -> void;
+        auto setOptions(TextureOptions options) -> void;
 
-        static auto make(int w, int h, DataType sourceDataType, TextureFormat format, const void* data) -> Texture*;
+        static auto make(int w, int h, TextureFormat deviceFormat, const TextureSourceData* desc) -> Texture*;
 
         handle_t      handle;
         TextureFormat format;

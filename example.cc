@@ -56,9 +56,11 @@ namespace mgl {
     }
 }
 
-static mgl::Buffer*      vbo     = nullptr;
-static mgl::VertexArray* vao     = nullptr;
-static mgl::Program*     program = nullptr;
+static mgl::Buffer*      vbo       = nullptr;
+static mgl::VertexArray* vao       = nullptr;
+static mgl::Program*     program   = nullptr;
+static mgl::Texture*     texture   = nullptr;
+static mgl::Sampler      sampler1 = { 0 };
 
 static auto init() -> void {
     mgl::init();
@@ -80,6 +82,25 @@ static auto init() -> void {
         }
     });
 
+    const int32_t pixel = 0xFFFF00FF;
+    const mgl::TextureSourceData texData {
+        TextureFormat::RGB,
+        DataType::Byte,
+        &pixel
+    };
+
+    texture = mgl::Texture::make (1, 1, TextureFormat::RGB32f, &texData);
+    
+    TextureOptions options{};
+    options.filter.min = TextureFilterMode::Nearest;
+    options.filter.mag = TextureFilterMode::Nearest;
+    options.wrap.s     = TextureWrapMode::ClampToEdge;
+    options.wrap.r     = TextureWrapMode::ClampToEdge;
+    options.wrap.t     = TextureWrapMode::ClampToEdge;
+    
+    texture->setOptions(options);
+    sampler1.setTexture(texture);
+
     char error[1024];
     View<char> errorString{error};
     program = Program::make(
@@ -93,10 +114,12 @@ static auto init() -> void {
             }
         ),
         MGL_GLSL(410,
+
+            uniform sampler2D sampler1;
             out vec4 fragColour;
 
             void main() {
-                fragColour = vec4(1, 1, 1, 1);
+                fragColour = vec4(texture(sampler1, vec2(0, 0)).rgb, 1);
             }
         ), errorString
     );
@@ -112,7 +135,10 @@ static auto render(int framebufferWidth, int frameBufferHeight) -> void {
     mgl::clear(0.1, 0.1, 0.1);
 
     vao->bind();
+    sampler1.bind();
     program->use();
+
+    program->uniform("sampler1") = sampler1;
     program->uniform("matrix") = glm::identity<glm::mat4>();
 
     vao->draw(DrawMode::Triangles, 0, 3);
